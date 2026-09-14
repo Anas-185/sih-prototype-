@@ -52,16 +52,21 @@ def batch_load_entities(session, csv_path, source_tag, batch_size=500):
 
     records = df.to_dict(orient="records")
 
+    # Ingest with both .id and .entity_id populated to avoid query breakage
     query = """
     UNWIND $batch AS row
     MERGE (e:Entity {id: toString(row.id)})
     ON CREATE SET 
         e += row,
+        e.id = toString(row.id),
+        e.entity_id = toString(row.id),
         e.name = coalesce(row.name, row.label, row.id),
         e.type = coalesce(row.type, row.entity_type, 'Unknown'),
         e.source = $source
     ON MATCH SET 
         e += row,
+        e.id = toString(row.id),
+        e.entity_id = toString(row.id),
         e.name = coalesce(row.name, row.label, e.name),
         e.updated_source = $source
     """
@@ -98,10 +103,11 @@ def batch_load_relationships(session, csv_path, source_tag, batch_size=500):
 
     records = df.to_dict(orient="records")
 
+    # Match resiliently across both id and entity_id
     query = """
     UNWIND $batch AS row
-    MATCH (source:Entity {id: toString(row.source)})
-    MATCH (target:Entity {id: toString(row.target)})
+    MATCH (source:Entity) WHERE source.id = toString(row.source) OR source.entity_id = toString(row.source)
+    MATCH (target:Entity) WHERE target.id = toString(row.target) OR target.entity_id = toString(row.target)
     MERGE (source)-[r:CONNECTED_TO {type: coalesce(row.type, 'RELATED')}]->(target)
     ON CREATE SET 
         r += row,
