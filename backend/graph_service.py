@@ -22,18 +22,18 @@ def search_entity(query_text, limit=20):
     query = """
     MATCH (n:Entity)
     WHERE toLower(n.name) CONTAINS toLower($q)
-       OR toLower(coalesce(n.alias, '')) CONTAINS toLower($q)
+       OR toLower(coalesce(n['alias'], '')) CONTAINS toLower($q)
        OR toLower(n.id) CONTAINS toLower($q)
-       OR toLower(coalesce(n.entity_id, '')) CONTAINS toLower($q)
-       OR toLower(coalesce(n.phone, '')) CONTAINS toLower($q)
-       OR toLower(coalesce(n.crime_type, '')) CONTAINS toLower($q)
-       OR toLower(coalesce(n.location_name, '')) CONTAINS toLower($q)
+       OR toLower(coalesce(n['entity_id'], '')) CONTAINS toLower($q)
+       OR toLower(coalesce(n['phone'], '')) CONTAINS toLower($q)
+       OR toLower(coalesce(n['crime_type'], '')) CONTAINS toLower($q)
+       OR toLower(coalesce(n['location_name'], '')) CONTAINS toLower($q)
     RETURN 
         n.id AS id, 
         coalesce(n.type, labels(n)[0]) AS type, 
         n.name AS name,
-        n.alias AS alias,
-        coalesce(n.threat_level, 'UNKNOWN') AS threat_level
+        coalesce(n['alias'], '') AS alias,
+        coalesce(n['threat_level'], 'UNKNOWN') AS threat_level
     LIMIT $limit
     """
     with get_driver() as driver:
@@ -66,7 +66,7 @@ def get_full_graph(limit=200):
         n.id AS id,
         n.name AS label,
         coalesce(n.type, labels(n)[0]) AS type,
-        coalesce(n.alias, '') AS alias,
+        coalesce(n['alias'], '') AS alias,
         degree AS visual_weight,
         relationships
     """
@@ -119,7 +119,7 @@ def get_node_details(entity_id):
     """Fetch complete metadata properties and generate an automated Threat Score."""
     query = """
     MATCH (n:Entity)
-    WHERE n.id = $id OR n.entity_id = $id
+    WHERE n.id = $id OR coalesce(n['entity_id'], '') = $id
     OPTIONAL MATCH (n)-[r]-()
     WITH n, count(r) AS total_connections
     RETURN 
@@ -164,15 +164,15 @@ def get_resolved_entities(limit=25):
     """
     query = """
     MATCH (canonical:Entity)
-    WHERE size(coalesce(canonical.merged_from, [])) > 0 
-       OR canonical.alias IS NOT NULL
+    WHERE size(coalesce(canonical['merged_from'], [])) > 0 
+       OR canonical['alias'] IS NOT NULL
     RETURN 
         canonical.id AS master_id,
         canonical.name AS master_name,
         coalesce(canonical.type, labels(canonical)[0]) AS entity_type,
-        coalesce(canonical.merged_from, [canonical.alias]) AS raw_matched_names,
-        coalesce(canonical.resolution_confidence, 0.94) AS confidence_score,
-        coalesce(canonical.match_criteria, 'Shared Phone/IMEI and Location Cluster') AS match_reason
+        coalesce(canonical['merged_from'], [canonical['alias']]) AS raw_matched_names,
+        coalesce(canonical['resolution_confidence'], 0.94) AS confidence_score,
+        coalesce(canonical['match_criteria'], 'Shared Phone/IMEI and Location Cluster') AS match_reason
     LIMIT $limit
     """
     with get_driver() as driver:
@@ -193,8 +193,8 @@ def find_shortest_path(id1, id2):
     """
     query = """
     MATCH (p1:Entity), (p2:Entity)
-    WHERE (p1.id = $id1 OR p1.entity_id = $id1)
-      AND (p2.id = $id2 OR p2.entity_id = $id2)
+    WHERE (p1.id = $id1 OR coalesce(p1['entity_id'], '') = $id1)
+      AND (p2.id = $id2 OR coalesce(p2['entity_id'], '') = $id2)
     MATCH path = shortestPath((p1)-[:CONNECTED_TO|ASSOCIATED_WITH|LIVES_AT|INVOLVED_IN*..6]-(p2))
     WITH path, nodes(path) AS path_nodes
     RETURN 
@@ -202,7 +202,7 @@ def find_shortest_path(id1, id2):
             id: node.id, 
             label: node.name, 
             type: coalesce(node.type, labels(node)[0]), 
-            alias: node.alias
+            alias: coalesce(node['alias'], '')
         }] AS path_nodes,
         [rel in relationships(path) | coalesce(rel.type, type(rel))] AS path_rels,
         length(path) AS total_hops,
